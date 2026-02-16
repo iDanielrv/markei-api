@@ -8,7 +8,7 @@ import 'dotenv/config';
 @Module({
   imports: [
     AuthModule,
-    MongooseModule.forRoot(process.env.DB_URL || 'mongodb://localhost:27017/noteapp'),
+    MongooseModule.forRoot(process.env.DB_URL || 'mongodb://localhost:27017/notesapp'),
   ],
   controllers: [AppController],
   providers: [AppService],
