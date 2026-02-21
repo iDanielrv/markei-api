@@ -1,4 +1,5 @@
-import { Injectable, ConflictException, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { throwAppError } from '../common/errors/error-catalog';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument, Role } from './schemas/user.schema';
@@ -18,7 +19,7 @@ export class AuthService {
   async register(dto: CreateUserDto) {
     const existing = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
     if (existing) {
-      throw new ConflictException('Username already taken');
+      throwAppError('CONFLICT', 'Username already taken');
     }
 
     const hashed = await bcrypt.hash(dto.password, 12); // 12 rounds (mais seguro que 10)
@@ -76,9 +77,9 @@ export class AuthService {
   // ── Login ─────────────────────────────────────────────────────
   async login(dto: { username: string; password: string }) {
     const user = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
-    if (!user) throw new UnauthorizedException('Credenciais inválidas');
+    if (!user) throwAppError('INVALID_CREDENTIALS');
     const valid = await bcrypt.compare(dto.password, user.password);
-    if (!valid) throw new UnauthorizedException('Credenciais inválidas');
+    if (!valid) throwAppError('INVALID_CREDENTIALS');
 
     const userObj = this.sanitizeUser(user);
     const payload = { sub: user._id.toString(), username: user.username, role: user.role };
@@ -99,7 +100,7 @@ export class AuthService {
   // ── Admin: change user role ───────────────────────────────────
   async changeUserRole(targetUserId: string, newRole: Role) {
     const user = await this.userModel.findById(targetUserId).exec();
-    if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (!user) throwAppError('USER_NOT_FOUND');
 
     user.role = newRole;
     await user.save();

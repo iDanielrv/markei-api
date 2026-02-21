@@ -1,9 +1,5 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { throwAppError } from '../../common/errors/error-catalog';
 import { Reflector } from '@nestjs/core';
 import { Role } from '../schemas/user.schema';
 import { ROLES_KEY } from '../decorators/roles.decorator';
@@ -33,11 +29,11 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user || !user.role) {
-      throw new ForbiddenException('Acesso negado: usuário sem role definida');
+      throwAppError('FORBIDDEN', 'Acesso negado: usuário sem role definida');
     }
 
     if (!requiredRoles.includes(user.role as Role)) {
-      throw new ForbiddenException('Acesso negado: permissão insuficiente');
+      throwAppError('FORBIDDEN', 'Acesso negado: permissão insuficiente');
     }
 
     return true;

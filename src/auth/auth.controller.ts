@@ -7,8 +7,8 @@ import {
   Res,
   Req,
   UseGuards,
-  UnauthorizedException,
 } from '@nestjs/common';
+import { throwAppError } from '../common/errors/error-catalog';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
@@ -23,6 +23,16 @@ import * as crypto from 'crypto';
 function setAuthCookie(res: Response, token: string) {
   res.cookie('auth', token, {
     httpOnly: true,        // NÃO acessível por JS (proteção XSS)
+    signed: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
+  });
+}
+
+function setRefreshCookie(res: Response, token: string) {
+  res.cookie('refresh', token, {
+    httpOnly: true,
     signed: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -50,9 +60,13 @@ export class AuthController {
     if (result?.access_token) {
       setAuthCookie(res, result.access_token);
     }
+    // Store refresh token in HttpOnly cookie; do NOT expose it in the JSON body
+    if (result?.refresh_token) {
+      setRefreshCookie(res, result.refresh_token);
+    }
+
     return {
       access_token: result.access_token,
-      refresh_token: result.refresh_token,
       user: result.user,
     };
   }
@@ -61,27 +75,45 @@ export class AuthController {
   @Post('logout')
   async logout(
     @Body('refresh_token') refreshToken: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (refreshToken) {
-      const found = await this.authService.findByRefreshToken(refreshToken);
+    // Prefer refresh token from cookie (HttpOnly). Fallback to body.
+    let token = refreshToken;
+    try {
+      const signed = (req as any).signedCookies || {};
+      if (!token && signed.refresh) token = signed.refresh as string;
+    } catch {}
+
+    if (token) {
+      const found = await this.authService.findByRefreshToken(token);
       if (found?.userObj) {
-        await this.authService.removeRefreshToken(found.userObj._id, refreshToken);
+        await this.authService.removeRefreshToken(found.userObj._id, token);
       }
     }
+
     res.clearCookie('auth');
+    res.clearCookie('refresh');
     return { ok: true };
   }
 
   // ── Refresh ───────────────────────────────────────────────────
   @Post('refresh')
   async refresh(
-    @Body('refresh_token') refreshToken: string,
+    @Body('refresh_token') refreshToken: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!refreshToken) throw new UnauthorizedException();
-    const found = await this.authService.findByRefreshToken(refreshToken);
-    if (!found) throw new UnauthorizedException();
+    // Accept refresh token from cookie (HttpOnly) or request body
+    let token = refreshToken;
+    try {
+      const signed = (req as any).signedCookies || {};
+      if (!token && signed.refresh) token = signed.refresh as string;
+    } catch {}
+
+    if (!token) throwAppError('UNAUTHORIZED');
+    const found = await this.authService.findByRefreshToken(token);
+    if (!found) throwAppError('UNAUTHORIZED');
 
     const userDoc = found.userDoc as any;
     const userObj = found.userObj;
@@ -95,11 +127,14 @@ export class AuthController {
 
     // Rotate refresh token: remove old, create new
     const newRefresh = crypto.randomBytes(64).toString('hex');
-    await this.authService.removeRefreshToken(userDoc._id.toString(), refreshToken);
+    await this.authService.removeRefreshToken(userDoc._id.toString(), token as string);
     await this.authService.saveRefreshToken(userDoc._id.toString(), newRefresh);
 
+    // set cookies: access token (auth) and refresh token (refresh)
     setAuthCookie(res, access_token);
-    return { access_token, refresh_token: newRefresh, user: userObj };
+    setRefreshCookie(res, newRefresh);
+
+    return { access_token, user: userObj };
   }
 
   // ── Profile (any authenticated user) ──────────────────────────

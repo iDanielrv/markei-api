@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ResponseTransformInterceptor } from './common/interceptors/response.interceptor';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
@@ -17,6 +19,11 @@ async function bootstrap() {
 
   // Cookie parser
   app.use(cookieParser(process.env.COOKIE_SECRET || 'dev-cookie-secret'));
+
+  // Global exception filter — padroniza formato de erros
+  app.useGlobalFilters(new HttpExceptionFilter());
+  // Global response interceptor — normaliza respostas de sucesso
+  app.useGlobalInterceptors(new ResponseTransformInterceptor());
 
   // CORS — suporta múltiplas origens via FRONTEND_URLS
   const frontendEnv =
