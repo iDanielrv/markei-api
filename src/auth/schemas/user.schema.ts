@@ -6,11 +6,13 @@ export type UserDocument = User & Document;
 /**
  * Roles de acesso do sistema.
  * - user: acesso padrão
+ * - company: acesso empresarial
  * - admin: acesso total
  * - moderator: acesso intermediário
  */
 export enum Role {
   USER = 'user',
+  COMPANY = 'company',
   ADMIN = 'admin',
   MODERATOR = 'moderator',
 }

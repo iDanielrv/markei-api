@@ -11,6 +11,7 @@ import {
 import { throwAppError } from '../common/errors/error-catalog';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { AdminCreateUserDto } from './dto/admin-create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import type { Response, Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
@@ -150,6 +151,14 @@ export class AuthController {
   @Roles(Role.ADMIN)
   async listUsers() {
     return this.authService.findAllUsers();
+  }
+
+  // ── Admin: criar usuário com role explícita ─────────────────────
+  @Post('admin/users')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.ADMIN)
+  async createUserAsAdmin(@Body() dto: AdminCreateUserDto) {
+    return this.authService.createUserAsAdmin(dto);
   }
 
   // ── Admin: alterar role de um usuário ─────────────────────────

@@ -35,6 +35,26 @@ export class AuthService {
     return this.sanitizeUser(saved);
   }
 
+  // ── Admin: create user with explicit role ─────────────────────────
+  async createUserAsAdmin(dto: { name: string; phone?: string; username: string; password: string; role: Role }) {
+    const existing = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
+    if (existing) {
+      throwAppError('CONFLICT', 'Username already taken');
+    }
+
+    const hashed = await bcrypt.hash(dto.password, 12);
+    const created = new this.userModel({
+      name: dto.name.trim(),
+      phone: dto.phone?.trim() || '',
+      username: dto.username.toLowerCase().trim(),
+      password: hashed,
+      role: dto.role || Role.USER,
+    });
+
+    const saved = await created.save();
+    return this.sanitizeUser(saved);
+  }
+
   // ── Validate user credentials ─────────────────────────────────
   async validateUser(username: string, password: string) {
     const user = await this.userModel.findOne({ username: username.toLowerCase() }).exec();
