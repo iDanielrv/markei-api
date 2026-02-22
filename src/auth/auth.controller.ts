@@ -24,7 +24,7 @@ function setAuthCookie(res: Response, token: string) {
   res.cookie('auth', token, {
     httpOnly: true,        // NÃO acessível por JS (proteção XSS)
     signed: true,
-    sameSite: 'lax',
+    sameSite: 'lax',       // Safe default — works because frontend proxies requests (same-origin)
     secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
   });
@@ -34,7 +34,7 @@ function setRefreshCookie(res: Response, token: string) {
   res.cookie('refresh', token, {
     httpOnly: true,
     signed: true,
-    sameSite: 'lax',
+    sameSite: 'lax',       // Safe default — works because frontend proxies requests (same-origin)
     secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dias
   });
@@ -161,5 +161,13 @@ export class AuthController {
     @Body('role') role: Role,
   ) {
     return this.authService.changeUserRole(userId, role);
+  }
+
+  // ── Promote user to ADMIN (convenience route for admins) ──────
+  @Post('admin/users/:id/make-admin')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.ADMIN)
+  async makeAdmin(@Param('id') userId: string) {
+    return this.authService.changeUserRole(userId, Role.ADMIN);
   }
 }
