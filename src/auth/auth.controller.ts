@@ -17,7 +17,7 @@ import type { Response, Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
-import { Role } from './schemas/user.schema';
+import { Role } from '@prisma/client';
 import * as crypto from 'crypto';
 
 // ── Cookie helper ───────────────────────────────────────────────
@@ -89,7 +89,7 @@ export class AuthController {
     if (token) {
       const found = await this.authService.findByRefreshToken(token);
       if (found?.userObj) {
-        await this.authService.removeRefreshToken(found.userObj._id, token);
+      await this.authService.removeRefreshToken(found.userObj.id, token);
       }
     }
 
@@ -120,7 +120,7 @@ export class AuthController {
     const userObj = found.userObj;
 
     const payload = {
-      sub: userDoc._id.toString(),
+      sub: userDoc.id.toString(),
       username: userDoc.username,
       role: userDoc.role,
     };
@@ -128,8 +128,8 @@ export class AuthController {
 
     // Rotate refresh token: remove old, create new
     const newRefresh = crypto.randomBytes(64).toString('hex');
-    await this.authService.removeRefreshToken(userDoc._id.toString(), token as string);
-    await this.authService.saveRefreshToken(userDoc._id.toString(), newRefresh);
+    await this.authService.removeRefreshToken(userDoc.id.toString(), token as string);
+    await this.authService.saveRefreshToken(userDoc.id.toString(), newRefresh);
 
     // set cookies: access token (auth) and refresh token (refresh)
     setAuthCookie(res, access_token);

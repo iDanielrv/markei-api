@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ── Roles de acesso ────────────────────────────────────────────
+enum Role {
+  USER
+  COMPANY
+  ADMIN
+  MODERATOR
+}
+
+// ── Usuários ───────────────────────────────────────────────────
+model User {
+  id            Int            @id @default(autoincrement())
+  name          String
+  username      String         @unique
+  phone         String         @default("")
+  password      String
+  role          Role           @default(USER)
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// ── Refresh tokens (MySQL não suporta arrays — tabela separada) ─
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @db.VarChar(64)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
+}

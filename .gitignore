@@ -52,8 +52,11 @@ pids
 *.seed
 *.pid.lock
 
-# Database runtime files (do NOT commit MongoDB data)
+# Database runtime files (do NOT commit data volumes)
 /mongo-data/
+/mysql-data/
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+/generated/prisma

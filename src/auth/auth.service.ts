@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { throwAppError } from '../common/errors/error-catalog';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { User, UserDocument, Role } from './schemas/user.schema';
+import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
@@ -11,53 +10,57 @@ import * as crypto from 'crypto';
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
 
   // ── Register ──────────────────────────────────────────────────
   async register(dto: CreateUserDto) {
-    const existing = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
-    if (existing) {
-      throwAppError('CONFLICT', 'Username already taken');
-    }
-
-    const hashed = await bcrypt.hash(dto.password, 12); // 12 rounds (mais seguro que 10)
-    const created = new this.userModel({
-      name: dto.name.trim(),
-      phone: dto.phone?.trim() || '',
-      username: dto.username.toLowerCase().trim(),
-      password: hashed,
-      role: Role.USER, // todo novo usuário começa como user
+    const existing = await this.prisma.user.findUnique({
+      where: { username: dto.username.toLowerCase() },
     });
-
-    const saved = await created.save();
-    return this.sanitizeUser(saved);
-  }
-
-  // ── Admin: create user with explicit role ─────────────────────────
-  async createUserAsAdmin(dto: { name: string; phone?: string; username: string; password: string; role: Role }) {
-    const existing = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
-    if (existing) {
-      throwAppError('CONFLICT', 'Username already taken');
-    }
+    if (existing) throwAppError('CONFLICT', 'Username already taken');
 
     const hashed = await bcrypt.hash(dto.password, 12);
-    const created = new this.userModel({
-      name: dto.name.trim(),
-      phone: dto.phone?.trim() || '',
-      username: dto.username.toLowerCase().trim(),
-      password: hashed,
-      role: dto.role || Role.USER,
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name.trim(),
+        phone: dto.phone?.trim() || '',
+        username: dto.username.toLowerCase().trim(),
+        password: hashed,
+        role: Role.USER,
+      },
     });
 
-    const saved = await created.save();
-    return this.sanitizeUser(saved);
+    return this.sanitizeUser(user);
+  }
+
+  // ── Admin: create user with explicit role ─────────────────────
+  async createUserAsAdmin(dto: { name: string; phone?: string; username: string; password: string; role: Role }) {
+    const existing = await this.prisma.user.findUnique({
+      where: { username: dto.username.toLowerCase() },
+    });
+    if (existing) throwAppError('CONFLICT', 'Username already taken');
+
+    const hashed = await bcrypt.hash(dto.password, 12);
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name.trim(),
+        phone: dto.phone?.trim() || '',
+        username: dto.username.toLowerCase().trim(),
+        password: hashed,
+        role: dto.role || Role.USER,
+      },
+    });
+
+    return this.sanitizeUser(user);
   }
 
   // ── Validate user credentials ─────────────────────────────────
   async validateUser(username: string, password: string) {
-    const user = await this.userModel.findOne({ username: username.toLowerCase() }).exec();
+    const user = await this.prisma.user.findUnique({
+      where: { username: username.toLowerCase() },
+    });
     if (!user) return null;
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return null;
@@ -66,12 +69,14 @@ export class AuthService {
 
   // ── Find by ID ────────────────────────────────────────────────
   async findById(id: string) {
-    const user = await this.userModel.findById(id).exec();
+    const user = await this.prisma.user.findUnique({
+      where: { id: parseInt(id, 10) },
+    });
     if (!user) return null;
     return this.sanitizeUser(user);
   }
 
-  // ── Token hashing ────────────────────────────────────────────
+  // ── Token hashing ─────────────────────────────────────────────
   private hashToken(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
@@ -79,35 +84,43 @@ export class AuthService {
   // ── Refresh token management ──────────────────────────────────
   async saveRefreshToken(userId: string, token: string) {
     const hash = this.hashToken(token);
-    await this.userModel.updateOne({ _id: userId }, { $push: { refreshTokens: hash } }).exec();
+    await this.prisma.refreshToken.create({
+      data: { tokenHash: hash, userId: parseInt(userId, 10) },
+    });
   }
 
   async removeRefreshToken(userId: string, token: string) {
     const hash = this.hashToken(token);
-    await this.userModel.updateOne({ _id: userId }, { $pull: { refreshTokens: hash } }).exec();
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId: parseInt(userId, 10), tokenHash: hash },
+    });
   }
 
   async findByRefreshToken(token: string) {
     const hash = this.hashToken(token);
-    const user = await this.userModel.findOne({ refreshTokens: hash }).exec();
-    if (!user) return null;
-    return { userObj: this.sanitizeUser(user), userDoc: user } as any;
+    const row = await this.prisma.refreshToken.findFirst({
+      where: { tokenHash: hash },
+      include: { user: true },
+    });
+    if (!row) return null;
+    return { userObj: this.sanitizeUser(row.user), userDoc: row.user };
   }
 
   // ── Login ─────────────────────────────────────────────────────
   async login(dto: { username: string; password: string }) {
-    const user = await this.userModel.findOne({ username: dto.username.toLowerCase() }).exec();
+    const user = await this.prisma.user.findUnique({
+      where: { username: dto.username.toLowerCase() },
+    });
     if (!user) throwAppError('INVALID_CREDENTIALS');
     const valid = await bcrypt.compare(dto.password, user.password);
     if (!valid) throwAppError('INVALID_CREDENTIALS');
 
     const userObj = this.sanitizeUser(user);
-    const payload = { sub: user._id.toString(), username: user.username, role: user.role };
+    const payload = { sub: user.id.toString(), username: user.username, role: user.role };
     const access_token = this.jwtService.sign(payload);
 
-    // Generate refresh token
     const refresh_token = crypto.randomBytes(64).toString('hex');
-    await this.saveRefreshToken(user._id.toString(), refresh_token);
+    await this.saveRefreshToken(user.id.toString(), refresh_token);
 
     return { access_token, refresh_token, user: userObj };
   }
@@ -119,24 +132,37 @@ export class AuthService {
 
   // ── Admin: change user role ───────────────────────────────────
   async changeUserRole(targetUserId: string, newRole: Role) {
-    const user = await this.userModel.findById(targetUserId).exec();
+    const user = await this.prisma.user.findUnique({
+      where: { id: parseInt(targetUserId, 10) },
+    });
     if (!user) throwAppError('USER_NOT_FOUND');
 
-    user.role = newRole;
-    await user.save();
-    return this.sanitizeUser(user);
+    const updated = await this.prisma.user.update({
+      where: { id: parseInt(targetUserId, 10) },
+      data: { role: newRole },
+    });
+    return this.sanitizeUser(updated);
   }
 
   // ── Admin: list all users ─────────────────────────────────────
   async findAllUsers() {
-    const users = await this.userModel.find().select('-password -refreshTokens').exec();
-    return users;
+    const users = await this.prisma.user.findMany({
+      omit: { password: true },
+    });
+    // Normaliza role para lowercase em cada usuário
+    return users.map((u) => ({
+      ...u,
+      role: typeof u.role === 'string' ? u.role.toLowerCase() : u.role,
+    }));
   }
 
-  // ── Helper: remove senha e tokens do objeto retornado ─────────
-  private sanitizeUser(user: UserDocument) {
-    const obj = user.toObject();
-    const { password, refreshTokens, ...safe } = obj;
+  // ── Helper: remove senha do objeto retornado ──────────────────
+  private sanitizeUser(user: any) {
+    const { password, ...safe } = user;
+    // Normaliza role para lowercase (Prisma retorna UPPERCASE — USER, ADMIN, etc.)
+    if (safe.role && typeof safe.role === 'string') {
+      safe.role = safe.role.toLowerCase();
+    }
     return safe;
   }
 }

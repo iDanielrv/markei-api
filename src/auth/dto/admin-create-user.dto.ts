@@ -1,5 +1,5 @@
 import { IsString, MinLength, MaxLength, IsOptional, Matches, IsEnum } from 'class-validator';
-import { Role } from '../schemas/user.schema';
+import { Role } from '@prisma/client';
 
 export class AdminCreateUserDto {
   @IsString()

@@ -1,32 +1,35 @@
 version: '3.9'
 services:
-  mongo:
-    image: mongo:6.0
-    container_name: notesapp_mongo
+  mysql:
+    image: mysql:8.0
+    container_name: notesapp_mysql
     restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
-      MONGO_INITDB_DATABASE: notesapp
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: notesapp
+      MYSQL_USER: notesapp
+      MYSQL_PASSWORD: notesapp
     volumes:
-      - ./mongo-data:/data/db
+      - ./mysql-data:/var/lib/mysql
     ports:
-      - "27017:27017"
+      - "3306:3306"
     networks:
       - notes-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  mongo-express:
-    image: mongo-express:1.0.0
-    container_name: notesapp_mongo_express
+  adminer:
+    image: adminer:latest
+    container_name: notesapp_adminer
     restart: unless-stopped
     depends_on:
-      - mongo
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-      ME_CONFIG_MONGODB_ADMINPASSWORD: example
-      ME_CONFIG_MONGODB_SERVER: mongo
+      - mysql
     ports:
-      - "8081:8081"
+      - "8080:8080"
     networks:
       - notes-net
 

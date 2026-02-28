@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { throwAppError } from '../../common/errors/error-catalog';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../schemas/user.schema';
+import { Role } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
 /**
