@@ -13,10 +13,12 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role, AppointmentStatus } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { AppointmentService } from './appointment.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { PaginationDto } from '../common/dto/pagination.dto';
+import { FindCompanyAppointmentsDto } from './dto/find-company-appointments.dto';
 import type { Request } from 'express';
 
 @Controller('appointments')
@@ -61,9 +63,9 @@ export class AppointmentController {
   // ── Meus agendamentos (cliente) ───────────────────────────────
   @Get('my')
   @UseGuards(AuthGuard('jwt'))
-  findMyAppointments(@Req() req: Request) {
+  findMyAppointments(@Req() req: Request, @Query() pagination: PaginationDto) {
     const user = req.user as any;
-    return this.appointmentService.findByClient(user.id);
+    return this.appointmentService.findByClient(user.id, pagination.page, pagination.limit);
   }
 
   // ── Cancelar meu agendamento (cliente) ────────────────────────
@@ -87,10 +89,15 @@ export class AppointmentController {
   @Roles(Role.COMPANY, Role.ADMIN)
   findCompanyAppointments(
     @Req() req: Request,
-    @Query('status') status?: AppointmentStatus,
+    @Query() query: FindCompanyAppointmentsDto,
   ) {
     const user = req.user as any;
-    return this.appointmentService.findByCompanyOwner(user.id, status);
+    return this.appointmentService.findByCompanyOwner(
+      user.id,
+      query.status,
+      query.page,
+      query.limit,
+    );
   }
 
   // ── Atualizar agendamento (empresa — mudar status, notas) ─────

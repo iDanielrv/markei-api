@@ -7,7 +7,7 @@ import { CompanyModule } from './company/company.module';
 import { ServiceModule } from './service/service.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { AppointmentModule } from './appointment/appointment.module';
-import 'dotenv/config';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -17,6 +17,7 @@ import 'dotenv/config';
     ServiceModule,
     ScheduleModule,
     AppointmentModule,
+    TelegramModule,
   ],
   controllers: [AppController],
   providers: [AppService],

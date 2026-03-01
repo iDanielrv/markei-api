@@ -6,6 +6,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import { paginate } from '../common/helpers/paginate.helper';
 
 @Injectable()
 export class AuthService {
@@ -145,15 +146,25 @@ export class AuthService {
   }
 
   // ── Admin: list all users ─────────────────────────────────────
-  async findAllUsers() {
-    const users = await this.prisma.user.findMany({
-      omit: { password: true },
-    });
-    // Normaliza role para lowercase em cada usuário
-    return users.map((u) => ({
+  async findAllUsers(page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        omit: { password: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count(),
+    ]);
+
+    const data = users.map((u) => ({
       ...u,
       role: typeof u.role === 'string' ? u.role.toLowerCase() : u.role,
     }));
+
+    return paginate(data, total, page, limit);
   }
 
   // ── Helper: remove senha do objeto retornado ──────────────────

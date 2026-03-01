@@ -4,6 +4,7 @@ import { throwAppError } from '../common/errors/error-catalog';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { AppointmentStatus, BookingChannel } from '@prisma/client';
+import { paginate } from '../common/helpers/paginate.helper';
 
 @Injectable()
 export class AppointmentService {
@@ -179,27 +180,52 @@ export class AppointmentService {
   }
 
   // ── Listar agendamentos da empresa ────────────────────────────
-  async findByCompanyOwner(ownerId: number, status?: AppointmentStatus) {
+  async findByCompanyOwner(
+    ownerId: number,
+    status?: AppointmentStatus,
+    page = 1,
+    limit = 20,
+  ) {
     const company = await this.prisma.company.findUnique({ where: { ownerId } });
     if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
 
-    return this.prisma.appointment.findMany({
-      where: {
-        companyId: company.id,
-        ...(status && { status }),
-      },
-      include: { service: true, client: { omit: { password: true } } },
-      orderBy: { startTime: 'asc' },
-    });
+    const where = {
+      companyId: company.id,
+      ...(status && { status }),
+    };
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where,
+        include: { service: true, client: { omit: { password: true } } },
+        orderBy: { startTime: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.appointment.count({ where }),
+    ]);
+
+    return paginate(data, total, page, limit);
   }
 
   // ── Listar agendamentos do cliente ────────────────────────────
-  async findByClient(clientId: number) {
-    return this.prisma.appointment.findMany({
-      where: { clientId },
-      include: { service: true, company: true },
-      orderBy: { startTime: 'desc' },
-    });
+  async findByClient(clientId: number, page = 1, limit = 20) {
+    const where = { clientId };
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where,
+        include: { service: true, company: true },
+        orderBy: { startTime: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.appointment.count({ where }),
+    ]);
+
+    return paginate(data, total, page, limit);
   }
 
   // ── Buscar agendamento por ID ─────────────────────────────────

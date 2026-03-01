@@ -4,6 +4,7 @@ import {
   Body,
   Get,
   Param,
+  Query,
   Res,
   Req,
   UseGuards,
@@ -19,6 +20,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import * as crypto from 'crypto';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 // ── Cookie helper ───────────────────────────────────────────────
 function setAuthCookie(res: Response, token: string) {
@@ -149,8 +151,8 @@ export class AuthController {
   @Get('admin/users')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.ADMIN)
-  async listUsers() {
-    return this.authService.findAllUsers();
+  async listUsers(@Query() pagination: PaginationDto) {
+    return this.authService.findAllUsers(pagination.page, pagination.limit);
   }
 
   // ── Admin: criar usuário com role explícita ─────────────────────
