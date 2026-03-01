@@ -32,7 +32,9 @@ export class RolesGuard implements CanActivate {
       throwAppError('FORBIDDEN', 'Acesso negado: usuário sem role definida');
     }
 
-    if (!requiredRoles.includes(user.role as Role)) {
+    // Compara case-insensitive (sanitizeUser retorna lowercase, Prisma enum é uppercase)
+    const userRole = (user.role as string).toUpperCase();
+    if (!requiredRoles.some((r) => r.toUpperCase() === userRole)) {
       throwAppError('FORBIDDEN', 'Acesso negado: permissão insuficiente');
     }
 

@@ -26,8 +26,13 @@ model User {
   password      String
   role          Role           @default(USER)
   refreshTokens RefreshToken[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+
+  // ── Relações de agendamento ─────────────────────────────────
+  company      Company?       // se role=COMPANY, tem 1 perfil de empresa
+  appointments Appointment[]  // agendamentos feitos como cliente
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ── Refresh tokens (MySQL não suporta arrays — tabela separada) ─
@@ -40,4 +45,125 @@ model RefreshToken {
 
   @@index([tokenHash])
   @@index([userId])
+}
+
+// ── Empresa (perfil público do empreendedor) ───────────────────
+model Company {
+  id          Int      @id @default(autoincrement())
+  name        String                          // Nome do negócio
+  slug        String   @unique                // URL pública: /book/:slug
+  description String   @db.Text              // Descrição curta
+  phone       String   @default("")           // Telefone/WhatsApp do negócio
+  address     String   @default("")           // Endereço (opcional)
+  timezone    String   @default("America/Sao_Paulo")
+
+  // Dono da empresa (1 User com role=COMPANY → 1 Company)
+  ownerId Int  @unique
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Relações
+  services     Service[]
+  schedules    WeeklySchedule[]
+  blockedDates BlockedDate[]
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Serviço oferecido pela empresa ─────────────────────────────
+model Service {
+  id          Int     @id @default(autoincrement())
+  name        String                          // Ex: "Corte de cabelo"
+  description String  @db.Text
+  duration    Int                              // Duração em minutos
+  price       Int     @default(0)              // Preço em centavos (ex: 5000 = R$50,00)
+  active      Boolean @default(true)           // Serviço disponível?
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+// ── Horários semanais da empresa ──────────────────────────────
+model WeeklySchedule {
+  id        Int     @id @default(autoincrement())
+  dayOfWeek Int                // 0=Domingo, 1=Segunda ... 6=Sábado
+  startTime String             // "09:00"
+  endTime   String             // "18:00"
+  enabled   Boolean @default(true)
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, dayOfWeek, startTime]) // evita slots duplicados
+  @@index([companyId])
+}
+
+// ── Datas bloqueadas (folgas, feriados) ────────────────────────
+model BlockedDate {
+  id     Int      @id @default(autoincrement())
+  date   DateTime @db.Date          // Data inteira bloqueada
+  reason String   @default("")      // "Feriado", "Férias", etc.
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, date])
+  @@index([companyId])
+}
+
+// ── Status do agendamento ──────────────────────────────────────
+enum AppointmentStatus {
+  PENDING    // Aguardando confirmação
+  CONFIRMED  // Confirmado
+  CANCELLED  // Cancelado
+  COMPLETED  // Concluído
+  NO_SHOW    // Cliente não compareceu
+}
+
+// ── Canal de origem do agendamento ─────────────────────────────
+enum BookingChannel {
+  WEB       // Pelo site
+  WHATSAPP  // Via WhatsApp bot
+  TELEGRAM  // Via Telegram bot
+  MANUAL    // Cadastrado manualmente pela empresa
+}
+
+// ── Agendamento ────────────────────────────────────────────────
+model Appointment {
+  id        Int               @id @default(autoincrement())
+  startTime DateTime                          // Início do atendimento
+  endTime   DateTime                          // Fim (startTime + service.duration)
+  status    AppointmentStatus @default(PENDING)
+  channel   BookingChannel    @default(WEB)   // De onde veio o agendamento
+  notes     String            @db.Text              // Observações
+
+  // Cliente (usuário logado ou dados avulsos)
+  clientId    Int?
+  client      User?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientName  String  @default("")   // Nome do cliente (para bookings sem conta)
+  clientPhone String  @default("")   // Telefone (para WhatsApp/Telegram)
+
+  // Empresa + Serviço
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  serviceId Int
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, startTime])
+  @@index([clientId])
+  @@index([serviceId])
 }
