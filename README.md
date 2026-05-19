@@ -221,4 +221,4 @@ npm run db:seed       # popular dados de teste
 
 ## Relacionado
 
-- **[Markei Frontend](../markei)** — cliente Next.js 16
+- **[Markei Frontend](https://github.com/iDanielrv/markei-frontend)** — cliente Next.js 16
