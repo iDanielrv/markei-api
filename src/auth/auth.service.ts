@@ -20,7 +20,7 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({
       where: { username: dto.username.toLowerCase() },
     });
-    if (existing) throwAppError('CONFLICT', 'Username already taken');
+    if (existing) throwAppError('USERNAME_TAKEN');
 
     const hashed = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
@@ -41,7 +41,7 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({
       where: { username: dto.username.toLowerCase() },
     });
-    if (existing) throwAppError('CONFLICT', 'Username already taken');
+    if (existing) throwAppError('USERNAME_TAKEN');
 
     const hashed = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({

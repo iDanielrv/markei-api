@@ -14,13 +14,13 @@ export class CompanyService {
     const existing = await this.prisma.company.findUnique({
       where: { ownerId },
     });
-    if (existing) throwAppError('CONFLICT', 'Você já possui uma empresa cadastrada');
+    if (existing) throwAppError('COMPANY_ALREADY_EXISTS');
 
     // Verificar slug único
     const slugTaken = await this.prisma.company.findUnique({
       where: { slug: dto.slug },
     });
-    if (slugTaken) throwAppError('CONFLICT', 'Este slug já está em uso');
+    if (slugTaken) throwAppError('SLUG_TAKEN');
 
     const company = await this.prisma.company.create({
       data: {
@@ -43,7 +43,7 @@ export class CompanyService {
       where: { ownerId },
       include: { services: true, schedules: true },
     });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
     return company;
   }
 
@@ -56,7 +56,7 @@ export class CompanyService {
         schedules: { where: { enabled: true } },
       },
     });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
     return company;
   }
 
@@ -65,14 +65,14 @@ export class CompanyService {
     const company = await this.prisma.company.findUnique({
       where: { ownerId },
     });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
 
     // Se está mudando o slug, verificar unicidade
     if (dto.slug && dto.slug !== company.slug) {
       const slugTaken = await this.prisma.company.findUnique({
         where: { slug: dto.slug },
       });
-      if (slugTaken) throwAppError('CONFLICT', 'Este slug já está em uso');
+      if (slugTaken) throwAppError('SLUG_TAKEN');
     }
 
     return this.prisma.company.update({

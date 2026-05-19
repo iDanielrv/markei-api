@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   ParseIntPipe,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -17,7 +16,8 @@ import { Role } from '@prisma/client';
 import { ServiceService } from './service.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
-import type { Request } from 'express';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/types/auth-user.type';
 
 @Controller('services')
 export class ServiceController {
@@ -27,8 +27,7 @@ export class ServiceController {
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  create(@Req() req: Request, @Body() dto: CreateServiceDto) {
-    const user = req.user as any;
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateServiceDto) {
     return this.serviceService.create(user.id, dto);
   }
 
@@ -36,8 +35,7 @@ export class ServiceController {
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  findAll(@Req() req: Request) {
-    const user = req.user as any;
+  findAll(@CurrentUser() user: AuthUser) {
     return this.serviceService.findAllByOwner(user.id);
   }
 
@@ -45,8 +43,7 @@ export class ServiceController {
   @Get(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  findOne(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const user = req.user as any;
+  findOne(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.serviceService.findOne(user.id, id);
   }
 
@@ -55,11 +52,10 @@ export class ServiceController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
   update(
-    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateServiceDto,
   ) {
-    const user = req.user as any;
     return this.serviceService.update(user.id, id, dto);
   }
 
@@ -67,8 +63,7 @@ export class ServiceController {
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  remove(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const user = req.user as any;
+  remove(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.serviceService.remove(user.id, id);
   }
 }

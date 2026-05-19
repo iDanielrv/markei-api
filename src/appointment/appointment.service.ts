@@ -1,72 +1,44 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { throwAppError } from '../common/errors/error-catalog';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { AppointmentStatus, BookingChannel } from '@prisma/client';
 import { paginate } from '../common/helpers/paginate.helper';
+import { AppointmentRepository } from './appointment.repository';
 
 @Injectable()
 export class AppointmentService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly repo: AppointmentRepository) {}
 
   // ═══════════════════════════════════════════════════════════════
   //  MOTOR DE SLOTS DISPONÍVEIS
   // ═══════════════════════════════════════════════════════════════
 
-  /**
-   * Gera os horários disponíveis para uma empresa em uma data específica.
-   *
-   * Lógica:
-   * 1. Verifica se a data é bloqueada
-   * 2. Busca o WeeklySchedule do dia da semana
-   * 3. Gera slots com base na duração do serviço
-   * 4. Remove slots que colidem com agendamentos existentes
-   */
   async getAvailableSlots(companyId: number, serviceId: number, dateStr: string) {
     const date = new Date(dateStr);
-    const dayOfWeek = date.getUTCDay(); // 0=Dom, 1=Seg...
+    const dayOfWeek = date.getUTCDay();
 
-    // 1. Data bloqueada?
     const startOfDay = new Date(dateStr);
     startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(dateStr);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const blocked = await this.prisma.blockedDate.findFirst({
-      where: {
-        companyId,
-        date: { gte: startOfDay, lte: endOfDay },
-      },
-    });
-    if (blocked) return []; // Dia bloqueado → sem slots
+    const blocked = await this.repo.findBlockedDate(companyId, startOfDay, endOfDay);
+    if (blocked) return [];
 
-    // 2. Buscar horários do dia
-    const schedules = await this.prisma.weeklySchedule.findMany({
-      where: { companyId, dayOfWeek, enabled: true },
-      orderBy: { startTime: 'asc' },
-    });
-    if (schedules.length === 0) return []; // Sem horário nesse dia
+    const schedules = await this.repo.findSchedulesByDay(companyId, dayOfWeek);
+    if (schedules.length === 0) return [];
 
-    // 3. Buscar serviço para saber duração
-    const service = await this.prisma.service.findFirst({
-      where: { id: serviceId, companyId, active: true },
-    });
-    if (!service) throwAppError('USER_NOT_FOUND', 'Serviço não encontrado ou inativo');
+    const service = await this.repo.findActiveService(serviceId, companyId);
+    if (!service) throwAppError('SERVICE_NOT_FOUND');
 
     const durationMs = service.duration * 60 * 1000;
+    const existingAppointments = await this.repo.findAppointmentsForDay(
+      companyId,
+      startOfDay,
+      endOfDay,
+    );
 
-    // 4. Buscar agendamentos existentes nesse dia (não cancelados)
-    const existingAppointments = await this.prisma.appointment.findMany({
-      where: {
-        companyId,
-        startTime: { gte: startOfDay },
-        endTime: { lte: new Date(endOfDay.getTime() + 1) },
-        status: { notIn: [AppointmentStatus.CANCELLED] },
-      },
-    });
-
-    // 5. Gerar todos os slots possíveis
     const slots: { startTime: string; endTime: string }[] = [];
 
     for (const schedule of schedules) {
@@ -85,7 +57,6 @@ export class AppointmentService {
         const slotStart = new Date(cursor);
         const slotEnd = new Date(cursor + durationMs);
 
-        // Verificar colisão com agendamentos existentes
         const hasConflict = existingAppointments.some((appt) => {
           const apptStart = new Date(appt.startTime).getTime();
           const apptEnd = new Date(appt.endTime).getTime();
@@ -99,7 +70,7 @@ export class AppointmentService {
           });
         }
 
-        cursor += durationMs; // Avança pela duração do serviço (sem buffer)
+        cursor += durationMs;
       }
     }
 
@@ -110,169 +81,113 @@ export class AppointmentService {
   //  CRUD DE AGENDAMENTOS
   // ═══════════════════════════════════════════════════════════════
 
-  // ── Criar agendamento (cliente ou empresa) ────────────────────
   async create(dto: CreateAppointmentDto, clientId?: number) {
-    // Validar serviço
-    const service = await this.prisma.service.findFirst({
-      where: { id: dto.serviceId, companyId: dto.companyId, active: true },
-    });
-    if (!service) throwAppError('USER_NOT_FOUND', 'Serviço não encontrado ou inativo');
+    const service = await this.repo.findActiveService(dto.serviceId, dto.companyId);
+    if (!service) throwAppError('SERVICE_NOT_FOUND');
 
     const startTime = new Date(dto.startTime);
     const endTime = new Date(startTime.getTime() + service.duration * 60 * 1000);
 
-    // Validar que o slot está disponível
-    const conflict = await this.prisma.appointment.findFirst({
-      where: {
-        companyId: dto.companyId,
-        status: { notIn: [AppointmentStatus.CANCELLED] },
-        startTime: { lt: endTime },
-        endTime: { gt: startTime },
-      },
-    });
-    if (conflict) throwAppError('CONFLICT', 'Este horário já está ocupado');
+    const conflict = await this.repo.findConflictingAppointment(
+      dto.companyId,
+      startTime,
+      endTime,
+    );
+    if (conflict) throwAppError('APPOINTMENT_SLOT_TAKEN');
 
-    // Validar que está dentro do horário semanal
     const dayOfWeek = startTime.getUTCDay();
-    const timeStr = `${String(startTime.getUTCHours()).padStart(2, '0')}:${String(startTime.getUTCMinutes()).padStart(2, '0')}`;
-    const endTimeStr = `${String(endTime.getUTCHours()).padStart(2, '0')}:${String(endTime.getUTCMinutes()).padStart(2, '0')}`;
+    const startTimeStr = toTimeStr(startTime);
+    const endTimeStr = toTimeStr(endTime);
 
-    const validSchedule = await this.prisma.weeklySchedule.findFirst({
-      where: {
-        companyId: dto.companyId,
-        dayOfWeek,
-        enabled: true,
-        startTime: { lte: timeStr },
-        endTime: { gte: endTimeStr },
-      },
-    });
-    if (!validSchedule) throwAppError('VALIDATION_ERROR', 'Horário fora do expediente da empresa');
+    const validSchedule = await this.repo.findScheduleContainingSlot(
+      dto.companyId,
+      dayOfWeek,
+      startTimeStr,
+      endTimeStr,
+    );
+    if (!validSchedule) throwAppError('SLOT_OUTSIDE_SCHEDULE');
 
-    // Validar data não bloqueada
     const dateStart = new Date(startTime);
     dateStart.setUTCHours(0, 0, 0, 0);
     const dateEnd = new Date(startTime);
     dateEnd.setUTCHours(23, 59, 59, 999);
 
-    const blocked = await this.prisma.blockedDate.findFirst({
-      where: {
-        companyId: dto.companyId,
-        date: { gte: dateStart, lte: dateEnd },
-      },
-    });
-    if (blocked) throwAppError('VALIDATION_ERROR', `Data bloqueada: ${blocked.reason || 'indisponível'}`);
+    const blocked = await this.repo.findBlockedDate(dto.companyId, dateStart, dateEnd);
+    if (blocked) throwAppError('DATE_BLOCKED', blocked.reason || undefined);
 
-    return this.prisma.appointment.create({
-      data: {
-        startTime,
-        endTime,
-        status: AppointmentStatus.PENDING,
-        channel: dto.channel || BookingChannel.WEB,
-        notes: dto.notes?.trim() || '',
-        clientId: clientId || null,
-        clientName: dto.clientName?.trim() || '',
-        clientPhone: dto.clientPhone?.trim() || '',
-        companyId: dto.companyId,
-        serviceId: dto.serviceId,
-      },
-      include: { service: true },
+    return this.repo.create({
+      startTime,
+      endTime,
+      status: AppointmentStatus.PENDING,
+      channel: dto.channel || BookingChannel.WEB,
+      notes: dto.notes?.trim() || '',
+      clientId: clientId ?? null,
+      clientName: dto.clientName?.trim() || '',
+      clientPhone: dto.clientPhone?.trim() || '',
+      companyId: dto.companyId,
+      serviceId: dto.serviceId,
     });
   }
 
-  // ── Listar agendamentos da empresa ────────────────────────────
   async findByCompanyOwner(
     ownerId: number,
     status?: AppointmentStatus,
     page = 1,
     limit = 20,
   ) {
-    const company = await this.prisma.company.findUnique({ where: { ownerId } });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
+    const company = await this.repo.findCompanyByOwner(ownerId);
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
 
-    const where = {
-      companyId: company.id,
-      ...(status && { status }),
-    };
     const skip = (page - 1) * limit;
-
-    const [data, total] = await Promise.all([
-      this.prisma.appointment.findMany({
-        where,
-        include: { service: true, client: { omit: { password: true } } },
-        orderBy: { startTime: 'asc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.appointment.count({ where }),
-    ]);
+    const { data, total } = await this.repo.findManyByCompany(
+      company.id,
+      status,
+      skip,
+      limit,
+    );
 
     return paginate(data, total, page, limit);
   }
 
-  // ── Listar agendamentos do cliente ────────────────────────────
   async findByClient(clientId: number, page = 1, limit = 20) {
-    const where = { clientId };
     const skip = (page - 1) * limit;
-
-    const [data, total] = await Promise.all([
-      this.prisma.appointment.findMany({
-        where,
-        include: { service: true, company: true },
-        orderBy: { startTime: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.appointment.count({ where }),
-    ]);
-
+    const { data, total } = await this.repo.findManyByClient(clientId, skip, limit);
     return paginate(data, total, page, limit);
   }
 
-  // ── Buscar agendamento por ID ─────────────────────────────────
   async findOne(id: number) {
-    const appt = await this.prisma.appointment.findUnique({
-      where: { id },
-      include: { service: true, company: true, client: { omit: { password: true } } },
-    });
-    if (!appt) throwAppError('USER_NOT_FOUND', 'Agendamento não encontrado');
+    const appt = await this.repo.findById(id);
+    if (!appt) throwAppError('APPOINTMENT_NOT_FOUND');
     return appt;
   }
 
-  // ── Atualizar status/notas (empresa) ──────────────────────────
   async update(ownerId: number, appointmentId: number, dto: UpdateAppointmentDto) {
-    const company = await this.prisma.company.findUnique({ where: { ownerId } });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada');
+    const company = await this.repo.findCompanyByOwner(ownerId);
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
 
-    const appt = await this.prisma.appointment.findFirst({
-      where: { id: appointmentId, companyId: company.id },
-    });
-    if (!appt) throwAppError('USER_NOT_FOUND', 'Agendamento não encontrado');
+    const appt = await this.repo.findByIdAndCompany(appointmentId, company.id);
+    if (!appt) throwAppError('APPOINTMENT_NOT_FOUND');
 
-    return this.prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        ...(dto.status !== undefined && { status: dto.status }),
-        ...(dto.notes !== undefined && { notes: dto.notes.trim() }),
-      },
-      include: { service: true },
+    return this.repo.update(appointmentId, {
+      ...(dto.status !== undefined && { status: dto.status }),
+      ...(dto.notes !== undefined && { notes: dto.notes.trim() }),
     });
   }
 
-  // ── Cancelar agendamento (cliente) ────────────────────────────
   async cancelByClient(clientId: number, appointmentId: number) {
-    const appt = await this.prisma.appointment.findFirst({
-      where: { id: appointmentId, clientId },
-    });
-    if (!appt) throwAppError('USER_NOT_FOUND', 'Agendamento não encontrado');
+    const appt = await this.repo.findByIdAndClient(appointmentId, clientId);
+    if (!appt) throwAppError('APPOINTMENT_NOT_FOUND');
 
     if (appt.status === AppointmentStatus.CANCELLED) {
-      throwAppError('VALIDATION_ERROR', 'Agendamento já está cancelado');
+      throwAppError('APPOINTMENT_ALREADY_CANCELLED');
     }
 
-    return this.prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: AppointmentStatus.CANCELLED },
-      include: { service: true },
-    });
+    return this.repo.update(appointmentId, { status: AppointmentStatus.CANCELLED });
   }
+}
+
+// Converte um Date para string "HH:MM" em UTC.
+// Extraído como função pura para deixar o método create legível.
+function toTimeStr(date: Date): string {
+  return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
 }

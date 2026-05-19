@@ -1,98 +1,224 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Markei API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> REST API da plataforma **Markei** — agendamentos multi-canal para negócios de serviços.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Construído com **NestJS**, **Prisma** e **MySQL**. Gerencia autenticação, perfis de empresa, serviços, grades horárias semanais e reservas com cálculo de slots disponíveis em tempo real.
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Funcionalidades
 
-## Project setup
+- **Autenticação JWT** — access token de curta duração + refresh token em cookie httpOnly com rotação automática
+- **Controle de acesso por papéis** — `USER`, `COMPANY`, `ADMIN`, `MODERATOR`
+- **Gestão de empresas** — perfil com slug público usado na página de agendamento
+- **Catálogo de serviços** — nome, duração (minutos) e preço (centavos) por empresa
+- **Grade horária semanal** — ativar/desativar dias e definir horário de início/fim; bloquear datas específicas (feriados, férias)
+- **Motor de disponibilidade** — gera slots de horários disponíveis filtrados por agendamentos existentes e datas bloqueadas
+- **Agendamento multi-canal** — `WEB`, `TELEGRAM`, `MANUAL` (hook WhatsApp preparado)
+- **Bot Telegram** — wizard em memória por sessão para clientes agendarem direto pelo Telegram
+- **Envelope de resposta padronizado** — toda resposta tem `statusCode`, `data`, `path`, `timestamp`
+- **Catálogo de erros centralizado** — códigos de erro tipados em toda a API
 
-```bash
-$ npm install
-```
+---
 
-## Compile and run the project
+## Stack
 
-```bash
-# development
-$ npm run start
+| Camada | Tecnologia |
+|---|---|
+| Framework | NestJS 11 |
+| Linguagem | TypeScript |
+| ORM | Prisma 7 (adaptador MariaDB) |
+| Banco de dados | MySQL 8.0 (Docker) |
+| Auth | `passport-jwt`, `bcryptjs`, cookies httpOnly |
+| Bot | Telegraf |
+| Validação | `class-validator`, `class-transformer` |
+| Testes | Jest |
 
-# watch mode
-$ npm run start:dev
+---
 
-# production mode
-$ npm run start:prod
-```
+## Como rodar
 
-## Run tests
+### Pré-requisitos
 
-```bash
-# unit tests
-$ npm run test
+- Node.js 20+
+- Docker (para o MySQL)
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Instalação
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+git clone <repo-url>
+cd markei-api
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Variáveis de ambiente
 
-## Resources
+```bash
+cp .env.example .env
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+| Variável | Obrigatório | Descrição |
+|---|---|---|
+| `DATABASE_URL` | sim | String de conexão MySQL |
+| `JWT_SECRET` | sim | Chave de assinatura JWT |
+| `COOKIE_SECRET` | sim | Chave de assinatura de cookie |
+| `FRONTEND_URLS` | sim | Origins permitidas para CORS (separadas por vírgula) |
+| `PORT` | não | Porta da API (padrão: `8088`) |
+| `TELEGRAM_BOT_TOKEN` | não | Token do bot Telegraf; bot fica desabilitado se ausente |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Banco de dados
 
-## Support
+```bash
+npm run mydb        # inicia MySQL + Adminer via Docker
+npm run db:migrate  # roda as migrations do Prisma
+npm run db:seed     # popula dados de teste (owner: barbearia_teste / teste123)
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Adminer disponível em `http://localhost:8080`.
 
-## Stay in touch
+### Rodando
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+npm run dev                              # desenvolvimento com hot reload
+npm run build && npm run start:prod      # produção
+```
 
-## License
+---
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Endpoints
+
+Todas as respostas seguem o envelope:
+
+```json
+{
+  "statusCode": 200,
+  "data": {},
+  "path": "/auth/login",
+  "timestamp": "2026-05-18T00:00:00.000Z"
+}
+```
+
+### Auth — `/auth`
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| POST | `/auth/register` | Público | Criar conta |
+| POST | `/auth/login` | Público | Login — retorna access token e seta cookie |
+| POST | `/auth/logout` | JWT | Revogar refresh token |
+| POST | `/auth/refresh` | Cookie | Emitir novo access token |
+| GET | `/auth/profile` | JWT | Usuário atual |
+| GET | `/auth/admin/users` | ADMIN | Listar todos os usuários |
+| POST | `/auth/admin/users` | ADMIN | Criar usuário com papel específico |
+
+### Empresas — `/companies`
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| POST | `/companies` | COMPANY | Criar perfil de empresa |
+| GET | `/companies/me` | COMPANY | Própria empresa |
+| PATCH | `/companies/me` | COMPANY | Atualizar perfil |
+| GET | `/companies/slug/:slug` | Público | Busca pública por slug |
+| GET | `/companies` | ADMIN | Listar todas as empresas |
+
+### Serviços — `/services`
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| POST | `/services` | COMPANY | Adicionar serviço |
+| GET | `/services` | COMPANY | Listar serviços da empresa |
+| PATCH | `/services/:id` | COMPANY | Atualizar serviço |
+| DELETE | `/services/:id` | COMPANY | Remover serviço |
+
+### Horários — `/schedules`
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| POST | `/schedules/bulk` | COMPANY | Definir grade horária semanal |
+| GET | `/schedules` | COMPANY | Ver grade atual |
+| PATCH | `/schedules/:id` | COMPANY | Atualizar um slot |
+| POST | `/schedules/blocked-dates` | COMPANY | Bloquear uma data |
+
+### Agendamentos — `/appointments`
+
+| Método | Path | Auth | Descrição |
+|---|---|---|---|
+| GET | `/appointments/available-slots` | Público | Slots disponíveis para um serviço em uma data |
+| POST | `/appointments/public` | Público | Agendar sem login (clientName + clientPhone) |
+| POST | `/appointments` | JWT | Agendar como usuário logado |
+| GET | `/appointments/my` | JWT | Agendamentos do cliente |
+| GET | `/appointments/company` | COMPANY | Todos os agendamentos da empresa |
+| PATCH | `/appointments/:id` | COMPANY | Atualizar status / detalhes |
+| PATCH | `/appointments/:id/cancel` | JWT | Cancelar agendamento |
+
+---
+
+## Arquitetura
+
+```
+src/
+  auth/           # estratégia JWT, guards, rotação de tokens
+  company/        # CRUD de empresa + resolução de slug
+  service/        # catálogo de serviços
+  schedule/       # WeeklySchedule + BlockedDate
+  appointment/    # motor de slots + CRUD de agendamentos
+  telegram/       # bot Telegraf (wizard por etapas)
+  prisma/         # PrismaService singleton
+  common/
+    errors/       # ErrorCatalog + throwAppError()
+    decorators/   # @CurrentUser, @Roles
+    guards/       # RolesGuard
+    filters/      # HttpExceptionFilter
+    interceptors/ # ResponseTransformInterceptor
+    helpers/      # requireEnv, paginate
+```
+
+Cada módulo segue o padrão:
+
+```
+<módulo>.controller.ts  — só HTTP (receber, validar, responder)
+<módulo>.service.ts     — orquestração / casos de uso
+<módulo>.repository.ts  — só queries Prisma, sem regra de negócio
+```
+
+---
+
+## Schema do banco
+
+```
+User ──< RefreshToken
+User ──< Appointment (como cliente)
+User ──  Company
+Company ──< Service
+Company ──< WeeklySchedule
+Company ──< BlockedDate
+Company ──< Appointment
+Service ──< Appointment
+```
+
+**Status de agendamento:** `PENDING` → `CONFIRMED` → `COMPLETED` / `NO_SHOW` / `CANCELLED`
+
+**Canais de booking:** `WEB` · `TELEGRAM` · `WHATSAPP` · `MANUAL`
+
+---
+
+## Scripts
+
+```bash
+npm run dev           # hot reload
+npm run build         # compilar
+npm run test          # testes unitários (Jest)
+npm run test:e2e      # testes e2e
+npm run lint          # ESLint --fix
+npm run mydb          # docker compose up -d
+npm run db:migrate    # prisma migrate dev
+npm run db:push       # prisma db push
+npm run db:generate   # regenerar cliente Prisma
+npm run db:studio     # Prisma Studio
+npm run db:seed       # popular dados de teste
+```
+
+---
+
+## Relacionado
+
+- **[Markei Frontend](../markei)** — cliente Next.js 16

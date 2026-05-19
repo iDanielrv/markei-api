@@ -7,7 +7,6 @@ import {
   Param,
   Query,
   ParseIntPipe,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -19,7 +18,8 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { FindCompanyAppointmentsDto } from './dto/find-company-appointments.dto';
-import type { Request } from 'express';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/types/auth-user.type';
 
 @Controller('appointments')
 export class AppointmentController {
@@ -49,8 +49,7 @@ export class AppointmentController {
   // ── Criar agendamento como cliente logado ─────────────────────
   @Post()
   @UseGuards(AuthGuard('jwt'))
-  createAsClient(@Req() req: Request, @Body() dto: CreateAppointmentDto) {
-    const user = req.user as any;
+  createAsClient(@CurrentUser() user: AuthUser, @Body() dto: CreateAppointmentDto) {
     return this.appointmentService.create(dto, user.id);
   }
 
@@ -63,8 +62,7 @@ export class AppointmentController {
   // ── Meus agendamentos (cliente) ───────────────────────────────
   @Get('my')
   @UseGuards(AuthGuard('jwt'))
-  findMyAppointments(@Req() req: Request, @Query() pagination: PaginationDto) {
-    const user = req.user as any;
+  findMyAppointments(@CurrentUser() user: AuthUser, @Query() pagination: PaginationDto) {
     return this.appointmentService.findByClient(user.id, pagination.page, pagination.limit);
   }
 
@@ -72,10 +70,9 @@ export class AppointmentController {
   @Patch(':id/cancel')
   @UseGuards(AuthGuard('jwt'))
   cancelMyAppointment(
-    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    const user = req.user as any;
     return this.appointmentService.cancelByClient(user.id, id);
   }
 
@@ -88,10 +85,9 @@ export class AppointmentController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
   findCompanyAppointments(
-    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
     @Query() query: FindCompanyAppointmentsDto,
   ) {
-    const user = req.user as any;
     return this.appointmentService.findByCompanyOwner(
       user.id,
       query.status,
@@ -105,11 +101,10 @@ export class AppointmentController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
   updateAppointment(
-    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAppointmentDto,
   ) {
-    const user = req.user as any;
     return this.appointmentService.update(user.id, id, dto);
   }
 

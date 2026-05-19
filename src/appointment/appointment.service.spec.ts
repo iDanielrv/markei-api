@@ -1,84 +1,52 @@
 /**
- * ┌─────────────────────────────────────────────────────────────────────────┐
- * │  AULA 2 – Testando um SERVICE com MOCKS (sem banco de dados real)       │
- * │                                                                         │
- * │  Por que usar mocks?                                                    │
- * │   • Testes unitários precisam ser RÁPIDOS e ISOLADOS                   │
- * │   • Um teste que fala com o banco é um teste de integração              │
- * │   • Com mocks, controlamos exatamente o que o banco "retorna"           │
- * │     em cada cenário, sem precisar de dados reais                        │
- * │                                                                         │
- * │  O que é um mock?                                                       │
- * │   • Um objeto "fake" que substitui a dependência real (PrismaService)   │
- * │   • Você define o retorno de cada método com jest.fn()                  │
- * │   • Isso permite simular: sucesso, falha, dados específicos             │
- * └─────────────────────────────────────────────────────────────────────────┘
+ * Testes unitários do AppointmentService.
  *
- * CONCEITOS NOVOS NESTE ARQUIVO:
- *  - jest.fn()              → cria uma função falsa rastreável
- *  - mockResolvedValue()    → define o que a função async vai resolver
- *  - mockResolvedValueOnce()→ idem, mas só na primeira chamada
- *  - rejects.toThrow()      → verifica que uma Promise rejeitou
- *  - toHaveBeenCalledWith() → verifica os argumentos da chamada
- *  - beforeEach()           → roda antes de CADA teste (reset de estado)
- *  - Test.createTestingModule → container de DI do NestJS para testes
+ * Estratégia: mocamos AppointmentRepository (não PrismaService diretamente),
+ * porque o service depende do repositório — não do banco. Isso reflete a
+ * separação de camadas que implementamos: o service não sabe que existe Prisma.
+ *
+ * Cada método do mock espelha um método real do AppointmentRepository.
+ * O NestJS injeta o mock no lugar da implementação real via `useValue`.
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppointmentService } from './appointment.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { AppointmentRepository } from './appointment.repository';
 import { AppointmentStatus, BookingChannel } from '@prisma/client';
 import { ApplicationException } from '../common/exceptions/application.exception';
 
 // ─── FACTORY DE MOCK ──────────────────────────────────────────────────────────
 //
-// Criamos uma função que RETORNA um novo objeto falso do Prisma a cada chamada.
-// Por que função e não objeto direto? Para o beforeEach poder criar um mock
-// limpo (sem histórico de chamadas) antes de cada teste.
+// Retorna um novo objeto a cada chamada para garantir isolamento entre testes.
+// Cada propriedade espelha um método público do AppointmentRepository.
 //
-// Cada método é um jest.fn() — uma função que:
-//   • pode ter seu retorno definido com .mockResolvedValue()
-//   • registra quantas vezes foi chamada e com quais argumentos
-//
-function createPrismaMock() {
+function createRepoMock() {
   return {
-    blockedDate: {
-      findFirst: jest.fn(),
-    },
-    weeklySchedule: {
-      findMany:  jest.fn(),
-      findFirst: jest.fn(),
-    },
-    service: {
-      findFirst: jest.fn(),
-    },
-    appointment: {
-      findMany:  jest.fn(),
-      findFirst: jest.fn(),
-      create:    jest.fn(),
-      update:    jest.fn(),
-      count:     jest.fn(),
-    },
-    company: {
-      findUnique: jest.fn(),
-    },
+    findCompanyByOwner:        jest.fn(),
+    findActiveService:         jest.fn(),
+    findSchedulesByDay:        jest.fn(),
+    findScheduleContainingSlot: jest.fn(),
+    findBlockedDate:           jest.fn(),
+    findAppointmentsForDay:    jest.fn(),
+    findConflictingAppointment: jest.fn(),
+    findById:                  jest.fn(),
+    findByIdAndCompany:        jest.fn(),
+    findByIdAndClient:         jest.fn(),
+    findManyByCompany:         jest.fn(),
+    findManyByClient:          jest.fn(),
+    create:                    jest.fn(),
+    update:                    jest.fn(),
   };
 }
 
-// ─── Tipo auxiliar ────────────────────────────────────────────────────────────
-// ReturnType + typeof deduz automaticamente o tipo do mock sem precisar
-// escrever manualmente.
-type PrismaMock = ReturnType<typeof createPrismaMock>;
+type RepoMock = ReturnType<typeof createRepoMock>;
 
-// ─── DADOS DE EXEMPLO (fixtures) ─────────────────────────────────────────────
-//
-// "Fixtures" são dados fixos que representam o estado do banco.
-// Definimos aqui para reutilizar nos testes sem repetição.
+// ─── FIXTURES ─────────────────────────────────────────────────────────────────
 
 const MOCK_SERVICE = {
   id: 1,
   name: 'Corte de Cabelo',
-  duration: 30, // minutos
+  duration: 30,
   price: 4500,
   companyId: 10,
   active: true,
@@ -93,33 +61,24 @@ const MOCK_SCHEDULE = {
   enabled: true,
 };
 
-// Data de teste: 2026-03-04 = quarta-feira (dayOfWeek = 3 UTC)
+// 2026-03-04 = quarta-feira (dayOfWeek = 3 em UTC)
 const TEST_DATE = '2026-03-04';
-const TEST_START_TIME = '2026-03-04T09:00:00.000Z'; // 09:00 UTC quarta
+const TEST_START_TIME = '2026-03-04T09:00:00.000Z';
 
 // ═════════════════════════════════════════════════════════════════════════════
 describe('AppointmentService', () => {
   let service: AppointmentService;
-  let prismaMock: PrismaMock;
+  let repoMock: RepoMock;
 
-  // ─── beforeEach ────────────────────────────────────────────────────────────
-  //
-  // O beforeEach() roda ANTES DE CADA teste individual (cada it() ).
-  // Aqui recriamos o módulo NestJS e o mock do Prisma do zero,
-  // garantindo que um teste não "contamina" o estado do próximo.
-  //
   beforeEach(async () => {
-    prismaMock = createPrismaMock();
+    repoMock = createRepoMock();
 
-    // Test.createTestingModule é o container de DI do NestJS para testes.
-    // Passamos o serviço real (AppointmentService) mas substituímos
-    // a dependência PrismaService pelo nosso objeto fake via `useValue`.
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AppointmentService,
         {
-          provide: PrismaService,   // "quando alguém pedir PrismaService…"
-          useValue: prismaMock,     // "…entregue este mock"
+          provide: AppointmentRepository,
+          useValue: repoMock,
         },
       ],
     }).compile();
@@ -128,65 +87,60 @@ describe('AppointmentService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BLOCO 1: Motor de Slots Disponíveis
-  // Testamos a função mais crítica do sistema: getAvailableSlots()
+  // BLOCO 1 — Motor de slots disponíveis
   // ═══════════════════════════════════════════════════════════════════════════
   describe('getAvailableSlots()', () => {
 
     it('deve retornar [] quando a data está bloqueada', async () => {
-      // Cenário: o dono bloqueou esta quarta-feira (feriado, etc.)
-
-      // mockResolvedValue define o retorno da função async.
-      // Como blockedDate.findFirst retorna algo (não null), o sistema entende
-      // que a data está bloqueada e deve retornar slots vazia.
-      prismaMock.blockedDate.findFirst.mockResolvedValue({ id: 99, reason: 'Feriado' });
+      repoMock.findBlockedDate.mockResolvedValue({ id: 99, reason: 'Feriado' });
 
       const result = await service.getAvailableSlots(10, 1, TEST_DATE);
 
       expect(result).toEqual([]);
-
-      // Verificamos também que o sistema PAROU aqui e NÃO consultou
-      // a agenda semanal (pois não havia necessidade).
-      expect(prismaMock.weeklySchedule.findMany).not.toHaveBeenCalled();
+      // O sistema parou na verificação do bloqueio — não buscou agenda
+      expect(repoMock.findSchedulesByDay).not.toHaveBeenCalled();
     });
 
     it('deve retornar [] quando não há agenda configurada para o dia', async () => {
-      // Cenário: empresa não trabalha às quartas-feiras
-      prismaMock.blockedDate.findFirst.mockResolvedValue(null);      // data livre
-      prismaMock.weeklySchedule.findMany.mockResolvedValue([]);       // sem agenda
-      // Não precisamos configurar os demais mocks, pois o código para aqui.
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.findSchedulesByDay.mockResolvedValue([]);
 
       const result = await service.getAvailableSlots(10, 1, TEST_DATE);
 
       expect(result).toEqual([]);
+      expect(repoMock.findActiveService).not.toHaveBeenCalled();
     });
 
-    it('deve gerar os slots corretos quando há agenda e serviço', async () => {
-      // Cenário feliz: agenda 09:00–10:00, serviço de 30 min
-      // Resultado esperado: dois slots (09:00–09:30 e 09:30–10:00)
+    it('deve lançar SERVICE_NOT_FOUND quando serviço não existe', async () => {
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.findSchedulesByDay.mockResolvedValue([MOCK_SCHEDULE]);
+      repoMock.findActiveService.mockResolvedValue(null);
 
-      prismaMock.blockedDate.findFirst.mockResolvedValue(null);
-      prismaMock.weeklySchedule.findMany.mockResolvedValue([MOCK_SCHEDULE]);
-      prismaMock.service.findFirst.mockResolvedValue(MOCK_SERVICE);
-      prismaMock.appointment.findMany.mockResolvedValue([]); // nenhum agendamento existente
+      await expect(
+        service.getAvailableSlots(10, 999, TEST_DATE),
+      ).rejects.toThrow(ApplicationException);
+    });
+
+    it('deve gerar 2 slots para agenda 09:00–10:00 com serviço de 30min', async () => {
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.findSchedulesByDay.mockResolvedValue([MOCK_SCHEDULE]);
+      repoMock.findActiveService.mockResolvedValue(MOCK_SERVICE);
+      repoMock.findAppointmentsForDay.mockResolvedValue([]);
 
       const result = await service.getAvailableSlots(10, 1, TEST_DATE);
 
-      // 09:00–10:00 com slots de 30min = 2 slots
       expect(result).toHaveLength(2);
-
-      // Verificamos o horário do primeiro slot em UTC
-      expect(result[0].startTime).toBe('2026-03-04T09:00:00.000Z');
-      expect(result[0].endTime).toBe('2026-03-04T09:30:00.000Z');
-
-      expect(result[1].startTime).toBe('2026-03-04T09:30:00.000Z');
-      expect(result[1].endTime).toBe('2026-03-04T10:00:00.000Z');
+      expect(result[0]).toEqual({
+        startTime: '2026-03-04T09:00:00.000Z',
+        endTime:   '2026-03-04T09:30:00.000Z',
+      });
+      expect(result[1]).toEqual({
+        startTime: '2026-03-04T09:30:00.000Z',
+        endTime:   '2026-03-04T10:00:00.000Z',
+      });
     });
 
-    it('deve remover o slot que colide com agendamento existente', async () => {
-      // Cenário: existe um agendamento das 09:00–09:30
-      // O slot das 09:00 deve sumir, mas o das 09:30 ainda aparece
-
+    it('deve remover slot que colide com agendamento existente', async () => {
       const existingAppointment = {
         id: 55,
         startTime: new Date('2026-03-04T09:00:00.000Z'),
@@ -194,37 +148,50 @@ describe('AppointmentService', () => {
         status:    AppointmentStatus.CONFIRMED,
       };
 
-      prismaMock.blockedDate.findFirst.mockResolvedValue(null);
-      prismaMock.weeklySchedule.findMany.mockResolvedValue([MOCK_SCHEDULE]);
-      prismaMock.service.findFirst.mockResolvedValue(MOCK_SERVICE);
-      prismaMock.appointment.findMany.mockResolvedValue([existingAppointment]);
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.findSchedulesByDay.mockResolvedValue([MOCK_SCHEDULE]);
+      repoMock.findActiveService.mockResolvedValue(MOCK_SERVICE);
+      repoMock.findAppointmentsForDay.mockResolvedValue([existingAppointment]);
 
       const result = await service.getAvailableSlots(10, 1, TEST_DATE);
 
-      // Só o segundo slot sobra
+      // Slot 09:00 ocupado — só o das 09:30 sobra
       expect(result).toHaveLength(1);
       expect(result[0].startTime).toBe('2026-03-04T09:30:00.000Z');
     });
 
-    it('deve retornar [] quando serviço não existe ou está inativo', async () => {
-      prismaMock.blockedDate.findFirst.mockResolvedValue(null);
-      prismaMock.weeklySchedule.findMany.mockResolvedValue([MOCK_SCHEDULE]);
-      prismaMock.service.findFirst.mockResolvedValue(null); // serviço não encontrado
+    it('deve retornar [] quando toda a agenda está ocupada', async () => {
+      const appointments = [
+        {
+          id: 1,
+          startTime: new Date('2026-03-04T09:00:00.000Z'),
+          endTime:   new Date('2026-03-04T09:30:00.000Z'),
+          status:    AppointmentStatus.CONFIRMED,
+        },
+        {
+          id: 2,
+          startTime: new Date('2026-03-04T09:30:00.000Z'),
+          endTime:   new Date('2026-03-04T10:00:00.000Z'),
+          status:    AppointmentStatus.PENDING,
+        },
+      ];
 
-      // throwAppError lança ApplicationException, que estende HttpException
-      await expect(
-        service.getAvailableSlots(10, 999, TEST_DATE),
-      ).rejects.toThrow(ApplicationException);
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.findSchedulesByDay.mockResolvedValue([MOCK_SCHEDULE]);
+      repoMock.findActiveService.mockResolvedValue(MOCK_SERVICE);
+      repoMock.findAppointmentsForDay.mockResolvedValue(appointments);
+
+      const result = await service.getAvailableSlots(10, 1, TEST_DATE);
+
+      expect(result).toHaveLength(0);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BLOCO 2: Criação de Agendamento
-  // Testamos as quatro validações antes de salvar um novo agendamento.
+  // BLOCO 2 — Criação de agendamento
   // ═══════════════════════════════════════════════════════════════════════════
   describe('create()', () => {
 
-    // ── DTO base usado em todos os testes de criação ──────────────────────
     const baseDto = {
       companyId:   10,
       serviceId:   1,
@@ -234,15 +201,15 @@ describe('AppointmentService', () => {
       channel:     BookingChannel.WEB,
     };
 
-    // Função auxiliar que configura o "caminho feliz" (todas as verificações passam)
-    // Cada teste vai sobrescrever apenas o mock que quer testar.
+    // Configura o "caminho feliz": todas as validações passam.
+    // Cada teste individual sobrescreve apenas o mock que quer testar.
     function setupHappyPath() {
-      prismaMock.service.findFirst.mockResolvedValue(MOCK_SERVICE);
-      prismaMock.appointment.findFirst.mockResolvedValue(null);   // sem conflito
-      prismaMock.weeklySchedule.findFirst.mockResolvedValue(MOCK_SCHEDULE); // dentro do expediente
-      prismaMock.blockedDate.findFirst.mockResolvedValue(null);   // data livre
-      prismaMock.appointment.create.mockResolvedValue({
-        id: 1,
+      repoMock.findActiveService.mockResolvedValue(MOCK_SERVICE);
+      repoMock.findConflictingAppointment.mockResolvedValue(null);
+      repoMock.findScheduleContainingSlot.mockResolvedValue(MOCK_SCHEDULE);
+      repoMock.findBlockedDate.mockResolvedValue(null);
+      repoMock.create.mockResolvedValue({
+        id:        1,
         ...baseDto,
         startTime: new Date(TEST_START_TIME),
         endTime:   new Date('2026-03-04T09:30:00.000Z'),
@@ -251,89 +218,105 @@ describe('AppointmentService', () => {
       });
     }
 
-    it('deve lançar erro quando o serviço não existe ou está inativo', async () => {
+    it('deve lançar SERVICE_NOT_FOUND quando serviço não existe', async () => {
       setupHappyPath();
-      // Sobrescreve: serviço não encontrado
-      prismaMock.service.findFirst.mockResolvedValue(null);
+      repoMock.findActiveService.mockResolvedValue(null);
 
       await expect(service.create(baseDto)).rejects.toThrow(ApplicationException);
     });
 
-    it('deve lançar erro quando já existe agendamento no mesmo horário', async () => {
+    it('deve lançar APPOINTMENT_SLOT_TAKEN quando horário está ocupado', async () => {
       setupHappyPath();
-      // Sobrescreve: conflito encontrado
-      prismaMock.appointment.findFirst.mockResolvedValue({ id: 7 });
+      repoMock.findConflictingAppointment.mockResolvedValue({ id: 7 });
 
-      await expect(service.create(baseDto)).rejects.toThrow(ApplicationException);
-
-      // Verificamos que a mensagem de erro é sobre conflito
       await expect(service.create(baseDto)).rejects.toThrow('Este horário já está ocupado');
     });
 
-    it('deve lançar erro quando o horário está fora do expediente', async () => {
+    it('deve lançar SLOT_OUTSIDE_SCHEDULE quando fora do expediente', async () => {
       setupHappyPath();
-      // Sobrescreve: nenhuma agenda válida encontrada para esse horário
-      prismaMock.weeklySchedule.findFirst.mockResolvedValue(null);
+      repoMock.findScheduleContainingSlot.mockResolvedValue(null);
 
       await expect(service.create(baseDto)).rejects.toThrow(
         'Horário fora do expediente da empresa',
       );
     });
 
-    it('deve lançar erro quando a data está bloqueada', async () => {
+    it('deve lançar DATE_BLOCKED quando a data está bloqueada', async () => {
       setupHappyPath();
-      // Sobrescreve: data bloqueada
-      prismaMock.blockedDate.findFirst.mockResolvedValue({ reason: 'Recesso' });
+      // O reason vira a mensagem de override no throwAppError
+      repoMock.findBlockedDate.mockResolvedValue({ reason: 'Recesso' });
 
-      await expect(service.create(baseDto)).rejects.toThrow('Data bloqueada: Recesso');
+      await expect(service.create(baseDto)).rejects.toThrow('Recesso');
     });
 
-    it('deve criar o agendamento quando tudo está válido', async () => {
+    it('deve lançar DATE_BLOCKED com mensagem padrão quando reason está vazio', async () => {
+      setupHappyPath();
+      repoMock.findBlockedDate.mockResolvedValue({ reason: '' });
+
+      await expect(service.create(baseDto)).rejects.toThrow('Esta data está bloqueada');
+    });
+
+    it('deve criar o agendamento com os dados corretos', async () => {
       setupHappyPath();
 
-      const result = await service.create(baseDto, 42 /* clientId */);
+      const result = await service.create(baseDto, 42);
 
-      // Verificamos que o agendamento foi criado com o status correto
       expect(result.status).toBe(AppointmentStatus.PENDING);
 
-      // toHaveBeenCalledWith verifica os argumentos com que o mock foi chamado.
-      // É útil para garantir que o serviço está passando os dados corretos para o banco.
-      expect(prismaMock.appointment.create).toHaveBeenCalledWith(
+      // Verificamos que o repositório recebeu os dados certos
+      expect(repoMock.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            clientId:  42,
-            companyId: 10,
-            serviceId: 1,
-            status:    AppointmentStatus.PENDING,
-            channel:   BookingChannel.WEB,
-          }),
+          clientId:  42,
+          companyId: 10,
+          serviceId: 1,
+          status:    AppointmentStatus.PENDING,
+          channel:   BookingChannel.WEB,
         }),
       );
+    });
+
+    it('deve criar agendamento sem clientId quando não autenticado', async () => {
+      setupHappyPath();
+
+      await service.create(baseDto); // sem clientId
+
+      expect(repoMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: null }),
+      );
+    });
+
+    it('deve calcular endTime corretamente com base na duração do serviço', async () => {
+      setupHappyPath();
+
+      await service.create(baseDto, 42);
+
+      const callArgs = repoMock.create.mock.calls[0][0];
+      const durationMs = MOCK_SERVICE.duration * 60 * 1000; // 30min em ms
+      const diff = callArgs.endTime.getTime() - callArgs.startTime.getTime();
+
+      expect(diff).toBe(durationMs);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BLOCO 3: Cancelamento pelo cliente
-  // Testamos as regras de negócio do cancelamento.
+  // BLOCO 3 — Cancelamento pelo cliente
   // ═══════════════════════════════════════════════════════════════════════════
   describe('cancelByClient()', () => {
 
     const PENDING_APPT = {
-      id: 1,
+      id:       1,
       clientId: 42,
-      status: AppointmentStatus.PENDING,
+      status:   AppointmentStatus.PENDING,
     };
 
-    it('deve lançar erro quando o agendamento não pertence ao cliente', async () => {
-      // findFirst retorna null: o registro não foi encontrado com clientId + id
-      prismaMock.appointment.findFirst.mockResolvedValue(null);
+    it('deve lançar APPOINTMENT_NOT_FOUND quando agendamento não pertence ao cliente', async () => {
+      repoMock.findByIdAndClient.mockResolvedValue(null);
 
       await expect(service.cancelByClient(42, 999)).rejects.toThrow(ApplicationException);
     });
 
-    it('deve lançar erro quando o agendamento já está cancelado', async () => {
-      // O agendamento existe, mas já está CANCELLED
-      prismaMock.appointment.findFirst.mockResolvedValue({
+    it('deve lançar APPOINTMENT_ALREADY_CANCELLED quando já cancelado', async () => {
+      repoMock.findByIdAndClient.mockResolvedValue({
         ...PENDING_APPT,
         status: AppointmentStatus.CANCELLED,
       });
@@ -344,8 +327,8 @@ describe('AppointmentService', () => {
     });
 
     it('deve cancelar o agendamento com sucesso', async () => {
-      prismaMock.appointment.findFirst.mockResolvedValue(PENDING_APPT);
-      prismaMock.appointment.update.mockResolvedValue({
+      repoMock.findByIdAndClient.mockResolvedValue(PENDING_APPT);
+      repoMock.update.mockResolvedValue({
         ...PENDING_APPT,
         status: AppointmentStatus.CANCELLED,
       });
@@ -354,12 +337,53 @@ describe('AppointmentService', () => {
 
       expect(result.status).toBe(AppointmentStatus.CANCELLED);
 
-      // Garantimos que o update foi chamado com os parâmetros corretos
-      expect(prismaMock.appointment.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 1 },
-          data:  { status: AppointmentStatus.CANCELLED },
-        }),
+      // O repositório deve receber o id e o novo status — nada mais
+      expect(repoMock.update).toHaveBeenCalledWith(
+        1,
+        { status: AppointmentStatus.CANCELLED },
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BLOCO 4 — Listagem de agendamentos da empresa
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('findByCompanyOwner()', () => {
+
+    const MOCK_COMPANY = { id: 10, ownerId: 99 };
+
+    it('deve lançar COMPANY_NOT_FOUND quando empresa não existe', async () => {
+      repoMock.findCompanyByOwner.mockResolvedValue(null);
+
+      await expect(service.findByCompanyOwner(99)).rejects.toThrow(ApplicationException);
+    });
+
+    it('deve retornar resultado paginado', async () => {
+      repoMock.findCompanyByOwner.mockResolvedValue(MOCK_COMPANY);
+      repoMock.findManyByCompany.mockResolvedValue({
+        data:  [{ id: 1 }, { id: 2 }],
+        total: 2,
+      });
+
+      const result = await service.findByCompanyOwner(99, undefined, 1, 20);
+
+      expect(result.data).toHaveLength(2);
+      expect(result.meta.total).toBe(2);
+      expect(result.meta.page).toBe(1);
+    });
+
+    it('deve calcular o skip corretamente', async () => {
+      repoMock.findCompanyByOwner.mockResolvedValue(MOCK_COMPANY);
+      repoMock.findManyByCompany.mockResolvedValue({ data: [], total: 0 });
+
+      await service.findByCompanyOwner(99, undefined, 3, 10);
+
+      // página 3, limit 10 → skip = (3-1) * 10 = 20
+      expect(repoMock.findManyByCompany).toHaveBeenCalledWith(
+        MOCK_COMPANY.id,
+        undefined,
+        20,
+        10,
       );
     });
   });

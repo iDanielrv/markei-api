@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   ParseIntPipe,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -19,7 +18,8 @@ import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 import { BulkScheduleDto } from './dto/bulk-schedule.dto';
 import { CreateBlockedDateDto } from './dto/create-blocked-date.dto';
-import type { Request } from 'express';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/types/auth-user.type';
 
 @Controller('schedules')
 export class ScheduleController {
@@ -33,8 +33,7 @@ export class ScheduleController {
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  createSlot(@Req() req: Request, @Body() dto: CreateScheduleDto) {
-    const user = req.user as any;
+  createSlot(@CurrentUser() user: AuthUser, @Body() dto: CreateScheduleDto) {
     return this.scheduleService.createSlot(user.id, dto);
   }
 
@@ -42,8 +41,7 @@ export class ScheduleController {
   @Post('bulk')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  bulkSet(@Req() req: Request, @Body() dto: BulkScheduleDto) {
-    const user = req.user as any;
+  bulkSet(@CurrentUser() user: AuthUser, @Body() dto: BulkScheduleDto) {
     return this.scheduleService.bulkSetSchedule(user.id, dto.schedules);
   }
 
@@ -51,8 +49,7 @@ export class ScheduleController {
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  findAll(@Req() req: Request) {
-    const user = req.user as any;
+  findAll(@CurrentUser() user: AuthUser) {
     return this.scheduleService.findAllByOwner(user.id);
   }
 
@@ -61,11 +58,10 @@ export class ScheduleController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
   updateSlot(
-    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateScheduleDto,
   ) {
-    const user = req.user as any;
     return this.scheduleService.updateSlot(user.id, id, dto);
   }
 
@@ -73,8 +69,7 @@ export class ScheduleController {
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  removeSlot(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const user = req.user as any;
+  removeSlot(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.scheduleService.removeSlot(user.id, id);
   }
 
@@ -85,24 +80,21 @@ export class ScheduleController {
   @Post('blocked-dates')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  addBlockedDate(@Req() req: Request, @Body() dto: CreateBlockedDateDto) {
-    const user = req.user as any;
+  addBlockedDate(@CurrentUser() user: AuthUser, @Body() dto: CreateBlockedDateDto) {
     return this.scheduleService.addBlockedDate(user.id, dto);
   }
 
   @Get('blocked-dates')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  listBlockedDates(@Req() req: Request) {
-    const user = req.user as any;
+  listBlockedDates(@CurrentUser() user: AuthUser) {
     return this.scheduleService.listBlockedDates(user.id);
   }
 
   @Delete('blocked-dates/:id')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  removeBlockedDate(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const user = req.user as any;
+  removeBlockedDate(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     return this.scheduleService.removeBlockedDate(user.id, id);
   }
 }

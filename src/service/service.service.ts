@@ -13,7 +13,7 @@ export class ServiceService {
     const company = await this.prisma.company.findUnique({
       where: { ownerId },
     });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada. Crie sua empresa primeiro.');
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
     return company;
   }
 
@@ -49,7 +49,7 @@ export class ServiceService {
     const service = await this.prisma.service.findFirst({
       where: { id: serviceId, companyId: company.id },
     });
-    if (!service) throwAppError('USER_NOT_FOUND', 'Serviço não encontrado');
+    if (!service) throwAppError('SERVICE_NOT_FOUND');
     return service;
   }
 
@@ -60,7 +60,7 @@ export class ServiceService {
     const service = await this.prisma.service.findFirst({
       where: { id: serviceId, companyId: company.id },
     });
-    if (!service) throwAppError('USER_NOT_FOUND', 'Serviço não encontrado');
+    if (!service) throwAppError('SERVICE_NOT_FOUND');
 
     return this.prisma.service.update({
       where: { id: serviceId },
@@ -81,7 +81,7 @@ export class ServiceService {
     const service = await this.prisma.service.findFirst({
       where: { id: serviceId, companyId: company.id },
     });
-    if (!service) throwAppError('USER_NOT_FOUND', 'Serviço não encontrado');
+    if (!service) throwAppError('SERVICE_NOT_FOUND');
 
     await this.prisma.service.delete({ where: { id: serviceId } });
     return { ok: true };

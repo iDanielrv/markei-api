@@ -4,12 +4,13 @@ import { AuthService } from './auth.service';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { requireEnv } from '../common/helpers/require-env.helper';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'secretKey',
+      secret: requireEnv('JWT_SECRET'),
       signOptions: { expiresIn: '1h' },
     }),
   ],

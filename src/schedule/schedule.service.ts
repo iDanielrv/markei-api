@@ -12,7 +12,7 @@ export class ScheduleService {
   // ── Helper ────────────────────────────────────────────────────
   private async getCompanyByOwner(ownerId: number) {
     const company = await this.prisma.company.findUnique({ where: { ownerId } });
-    if (!company) throwAppError('USER_NOT_FOUND', 'Empresa não encontrada. Crie sua empresa primeiro.');
+    if (!company) throwAppError('COMPANY_NOT_FOUND');
     return company;
   }
 
@@ -26,7 +26,7 @@ export class ScheduleService {
 
     // Validar que startTime < endTime
     if (dto.startTime >= dto.endTime) {
-      throwAppError('VALIDATION_ERROR', 'startTime deve ser anterior a endTime');
+      throwAppError('INVALID_TIME_RANGE');
     }
 
     return this.prisma.weeklySchedule.create({
@@ -47,7 +47,7 @@ export class ScheduleService {
     // Validar cada slot
     for (const s of slots) {
       if (s.startTime >= s.endTime) {
-        throwAppError('VALIDATION_ERROR', `Dia ${s.dayOfWeek}: startTime deve ser anterior a endTime`);
+        throwAppError('INVALID_TIME_RANGE');
       }
     }
 
@@ -89,12 +89,12 @@ export class ScheduleService {
     const slot = await this.prisma.weeklySchedule.findFirst({
       where: { id: slotId, companyId: company.id },
     });
-    if (!slot) throwAppError('USER_NOT_FOUND', 'Horário não encontrado');
+    if (!slot) throwAppError('SCHEDULE_NOT_FOUND');
 
     const newStart = dto.startTime ?? slot.startTime;
     const newEnd = dto.endTime ?? slot.endTime;
     if (newStart >= newEnd) {
-      throwAppError('VALIDATION_ERROR', 'startTime deve ser anterior a endTime');
+      throwAppError('INVALID_TIME_RANGE');
     }
 
     return this.prisma.weeklySchedule.update({
@@ -113,7 +113,7 @@ export class ScheduleService {
     const slot = await this.prisma.weeklySchedule.findFirst({
       where: { id: slotId, companyId: company.id },
     });
-    if (!slot) throwAppError('USER_NOT_FOUND', 'Horário não encontrado');
+    if (!slot) throwAppError('SCHEDULE_NOT_FOUND');
 
     await this.prisma.weeklySchedule.delete({ where: { id: slotId } });
     return { ok: true };
@@ -156,7 +156,7 @@ export class ScheduleService {
     const bd = await this.prisma.blockedDate.findFirst({
       where: { id: blockedDateId, companyId: company.id },
     });
-    if (!bd) throwAppError('USER_NOT_FOUND', 'Data bloqueada não encontrada');
+    if (!bd) throwAppError('BLOCKED_DATE_NOT_FOUND');
 
     await this.prisma.blockedDate.delete({ where: { id: blockedDateId } });
     return { ok: true };

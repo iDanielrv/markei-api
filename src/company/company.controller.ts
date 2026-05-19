@@ -5,7 +5,6 @@ import {
   Patch,
   Body,
   Param,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -15,7 +14,8 @@ import { Role } from '@prisma/client';
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
-import type { Request } from 'express';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUser } from '../common/types/auth-user.type';
 
 @Controller('companies')
 export class CompanyController {
@@ -25,8 +25,7 @@ export class CompanyController {
   @Post()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  create(@Req() req: Request, @Body() dto: CreateCompanyDto) {
-    const user = req.user as any;
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateCompanyDto) {
     return this.companyService.create(user.id, dto);
   }
 
@@ -34,8 +33,7 @@ export class CompanyController {
   @Get('me')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  findMine(@Req() req: Request) {
-    const user = req.user as any;
+  findMine(@CurrentUser() user: AuthUser) {
     return this.companyService.findByOwner(user.id);
   }
 
@@ -43,8 +41,7 @@ export class CompanyController {
   @Patch('me')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.COMPANY, Role.ADMIN)
-  updateMine(@Req() req: Request, @Body() dto: UpdateCompanyDto) {
-    const user = req.user as any;
+  updateMine(@CurrentUser() user: AuthUser, @Body() dto: UpdateCompanyDto) {
     return this.companyService.update(user.id, dto);
   }
 
