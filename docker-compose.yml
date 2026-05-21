@@ -22,6 +22,24 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build: .
+    container_name: markei_api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "mysql://notesapp:notesapp@mysql:3306/notesapp"
+      JWT_SECRET: ${JWT_SECRET}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    networks:
+      - notes-net
+
   adminer:
     image: adminer:latest
     container_name: notesapp_adminer
